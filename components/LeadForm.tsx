@@ -32,6 +32,7 @@ export default function LeadForm() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [parentEmailSent, setParentEmailSent] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   function validate(data: FormData): FormErrors {
@@ -85,6 +86,7 @@ export default function LeadForm() {
 
       const data = (await response.json().catch(() => null)) as {
         error?: string;
+        parentEmailSent?: boolean;
       } | null;
 
       if (!response.ok) {
@@ -95,6 +97,7 @@ export default function LeadForm() {
         return;
       }
 
+      setParentEmailSent(data?.parentEmailSent !== false);
       setSubmitted(true);
       setForm({ name: "", whatsapp: "", email: "" });
     } catch {
@@ -140,7 +143,9 @@ export default function LeadForm() {
                   You&apos;re all set!
                 </p>
                 <p className="mt-2 text-text-muted">
-                  Check your email — your guide is on its way!
+                  {parentEmailSent
+                    ? "Check your email — your guide is on its way!"
+                    : "We've received your details. Your guide email may take a moment — if it doesn't arrive, check spam or try again shortly."}
                 </p>
               </div>
             ) : (
