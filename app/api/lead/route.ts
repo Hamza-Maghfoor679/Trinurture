@@ -85,34 +85,26 @@ function buildConfirmationEmailHtml({
                 </ul>
                 <p style="margin:0 0 28px;">
                   Your guide is <strong>attached to this email</strong> as a PDF —
-                  open the attachment to download it.
+                  and you can also download it with the button below.
                   Keep an eye on WhatsApp too — we&rsquo;ll follow up with care there as well.
                 </p>
-                ${
-                  blueprintUrl
-                    ? `<p style="margin:0 0 28px;text-align:center;">
+                <p style="margin:0 0 28px;text-align:center;">
                   <a href="${blueprintUrl}" style="display:inline-block;background:#C4785A;color:#ffffff;text-decoration:none;font-weight:700;font-size:16px;padding:14px 28px;border-radius:14px;">
                     Download Your Free Blueprint
                   </a>
-                </p>`
-                    : ""
-                }
+                </p>
                 <p style="margin:0 0 8px;color:#6B635C;font-size:15px;">
                   With warmth,<br />
                   The TriNurture team
                 </p>
               </td>
             </tr>
-            ${
-              blueprintUrl
-                ? `<tr>
+            <tr>
               <td style="padding:8px 32px 28px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#6B635C;">
                 If the button doesn&rsquo;t work, copy and paste this link into your browser:<br />
                 <a href="${blueprintUrl}" style="color:#6B8F71;word-break:break-all;">${blueprintUrl}</a>
               </td>
-            </tr>`
-                : ""
-            }
+            </tr>
           </table>
         </td>
       </tr>
@@ -217,13 +209,14 @@ export async function POST(request: Request) {
 
   const sheetDbUrl = process.env.SHEETDB_API_URL?.trim();
   const resendApiKey = process.env.RESEND_API_KEY?.trim();
-  const fromEmail = process.env.RESEND_FROM_EMAIL?.trim();
+  const fromEmail =
+    process.env.RESEND_FROM_EMAIL?.trim() ||
+    "TriNurture <info@trinurture.com>";
   const blueprintUrl = process.env.BLUEPRINT_PDF_URL?.trim();
   const notifyEmail = process.env.NOTIFY_EMAIL?.trim();
 
   const missing = [
     !resendApiKey && "RESEND_API_KEY",
-    !fromEmail && "RESEND_FROM_EMAIL",
     !notifyEmail && "NOTIFY_EMAIL",
   ].filter(Boolean);
 
@@ -273,7 +266,7 @@ export async function POST(request: Request) {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
     const pdfLink =
       blueprintUrl ||
-      (siteUrl ? `${siteUrl}/blueprint.pdf` : undefined);
+      (siteUrl ? `${siteUrl}/blueprint.pdf` : "https://trinurture.com/blueprint.pdf");
 
     let pdfAttachment: { filename: string; content: Buffer } | undefined;
     try {
@@ -284,12 +277,42 @@ export async function POST(request: Request) {
         content: pdfContent,
       };
     } catch (error) {
-      console.warn("Could not load public/blueprint.pdf for email attachment:", error);
+      console.error("Could not load public/blueprint.pdf for email attachment:", error);
+      return NextResponse.json(
+        {
+          error:
+            "The blueprint PDF is missing on the server. Please try again later.",
+        },
+        { status: 500 },
+      );
     }
 
-    // Owner notification first — this is the address that must work in Resend test mode.
+    // Blueprint email goes to the address the parent submitted on the form.
+    const { error: confirmationError } = await resend.emails.send({
+      from: fromEmail,
+      to: email,
+      subject: "Your TriNurture 3-Pillar Research Blueprint 💛",
+      html: buildConfirmationEmailHtml({
+        name,
+        blueprintUrl: pdfLink,
+      }),
+      attachments: [pdfAttachment],
+    });
+
+    if (confirmationError) {
+      console.error("Resend confirmation error:", confirmationError);
+      return NextResponse.json(
+        {
+          error:
+            "We couldn't send your blueprint email. Please try again in a moment.",
+        },
+        { status: 502 },
+      );
+    }
+
+    // Owner notification (non-blocking if it fails after the parent already got the guide).
     const { error: notifyError } = await resend.emails.send({
-      from: fromEmail!,
+      from: fromEmail,
       to: notifyEmail!,
       subject: `New TriNurture lead: ${name}`,
       html: buildOwnerNotificationHtml({
@@ -302,37 +325,11 @@ export async function POST(request: Request) {
 
     if (notifyError) {
       console.error("Resend owner notification error:", notifyError);
-      return NextResponse.json(
-        {
-          error:
-            "We couldn't send the notification email. In Resend test mode, NOTIFY_EMAIL must be your Resend account email (check the terminal error for the allowed address).",
-        },
-        { status: 502 },
-      );
-    }
-
-    // Parent blueprint email — may fail in Resend test mode if address ≠ account email.
-    const { error: confirmationError } = await resend.emails.send({
-      from: fromEmail!,
-      to: email,
-      subject: "Your TriNurture 3-Pillar Research Blueprint 💛",
-      html: buildConfirmationEmailHtml({
-        name,
-        blueprintUrl: pdfLink ?? "",
-      }),
-      attachments: pdfAttachment ? [pdfAttachment] : undefined,
-    });
-
-    if (confirmationError) {
-      console.warn(
-        "Parent confirmation email skipped/failed (common in Resend test mode without a verified domain):",
-        confirmationError,
-      );
     }
 
     return NextResponse.json({
       success: true,
-      parentEmailSent: !confirmationError,
+      parentEmailSent: true,
     });
   } catch (error) {
     console.error("Lead capture failed:", error);
