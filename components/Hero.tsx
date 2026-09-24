@@ -68,7 +68,7 @@ export default function Hero() {
               Get Your Free Blueprint
             </a>
             <p className="mt-3 text-sm text-text-muted">
-              Free PDF guide · Delivered on WhatsApp
+              Free PDF guide · Delivered on Email
             </p>
           </motion.div>
         </div>
