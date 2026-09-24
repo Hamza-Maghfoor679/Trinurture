@@ -1,5 +1,3 @@
-import { readFile } from "fs/promises";
-import path from "path";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
@@ -84,14 +82,17 @@ function buildConfirmationEmailHtml({
                   <li style="margin-bottom:8px;"><strong style="color:#3D3632;">Heart &amp; Social</strong> — growing empathy and connection</li>
                 </ul>
                 <p style="margin:0 0 28px;">
-                  Your guide is <strong>attached to this email</strong> as a PDF —
-                  and you can also download it with the button below.
-                  Keep an eye on WhatsApp too — we&rsquo;ll follow up with care there as well.
+                  Grab your free guide with the button below, and keep an eye on
+                  WhatsApp too — we&rsquo;ll follow up with care there as well.
                 </p>
-                <p style="margin:0 0 28px;text-align:center;">
+                <p style="margin:0 0 12px;text-align:center;">
                   <a href="${blueprintUrl}" style="display:inline-block;background:#C4785A;color:#ffffff;text-decoration:none;font-weight:700;font-size:16px;padding:14px 28px;border-radius:14px;">
-                    Download Your Free Blueprint
+                    Download Your Blueprint PDF
                   </a>
+                </p>
+                <p style="margin:0 0 28px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#6B635C;text-align:center;">
+                  Download Your Blueprint PDF:<br />
+                  <a href="${blueprintUrl}" style="color:#6B8F71;word-break:break-all;">${blueprintUrl}</a>
                 </p>
                 <p style="margin:0 0 8px;color:#6B635C;font-size:15px;">
                   With warmth,<br />
@@ -268,25 +269,6 @@ export async function POST(request: Request) {
       blueprintUrl ||
       (siteUrl ? `${siteUrl}/blueprint.pdf` : "https://trinurture.com/blueprint.pdf");
 
-    let pdfAttachment: { filename: string; content: Buffer } | undefined;
-    try {
-      const pdfPath = path.join(process.cwd(), "public", "blueprint.pdf");
-      const pdfContent = await readFile(pdfPath);
-      pdfAttachment = {
-        filename: "TriNurture-3-Pillar-Research-Blueprint.pdf",
-        content: pdfContent,
-      };
-    } catch (error) {
-      console.error("Could not load public/blueprint.pdf for email attachment:", error);
-      return NextResponse.json(
-        {
-          error:
-            "The blueprint PDF is missing on the server. Please try again later.",
-        },
-        { status: 500 },
-      );
-    }
-
     // Blueprint email goes to the address the parent submitted on the form.
     const { error: confirmationError } = await resend.emails.send({
       from: fromEmail,
@@ -296,14 +278,21 @@ export async function POST(request: Request) {
         name,
         blueprintUrl: pdfLink,
       }),
-      attachments: [pdfAttachment],
     });
 
     if (confirmationError) {
       console.error("Resend confirmation error:", confirmationError);
+      const resendMessage =
+        typeof confirmationError === "object" &&
+        confirmationError &&
+        "message" in confirmationError &&
+        typeof confirmationError.message === "string"
+          ? confirmationError.message
+          : null;
       return NextResponse.json(
         {
           error:
+            resendMessage ??
             "We couldn't send your blueprint email. Please try again in a moment.",
         },
         { status: 502 },
